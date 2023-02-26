@@ -1,0 +1,13 @@
+{
+    "todo-tree.tree.scanMode": "workspace only",
+    "files.associations": {
+        "string": "cpp",
+        "wiring_private.h": "c",
+        "type_traits": "cpp"
+    },
+    "arduino_sketch": "LowPowerTest230203.ino",
+    "arduino_fqbn": "Seeeduino:samd:seeed_XIAO_m0:usbstack=arduino,debug=off,sercom4=exclude,cpu=xiao8",
+    "arduino_build_properties": "--warnings more",
+    "arduino_upload_properties": "-v",
+    "arduino_port": "COM12"
+}
