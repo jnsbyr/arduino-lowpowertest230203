@@ -148,7 +148,7 @@ Repeating this test with the Teensy LC using the Snooze library the standby curr
 
 ![Seed Studio XIAO SAMD21 without RF shield](assets/XIAO-SAMD21-open.jpg "Seed Studio XIAO SAMD21 without RF shield")
 
-With a needle it was possible to lift pin 3 of U1 from the PCB with very little force. Now the standby current reads 2.0 µA, even without changing the mode of all pins to input pullup.
+With a needle it was possible to lift pin 3 of U1 from the PCB with very little force. Now the standby current reads 2 µA, even without changing the mode of all pins to input pullup.
 
 ### Arduino Framework Limitations
 
@@ -158,41 +158,55 @@ The project code is specifically tailored for the SAMD21. Most of the code is no
 
 Using the Arduino library RTCZero would have been convenient, but only the clock/calendar mode is implemented and XOSC32K is used as clock source. Using OSCULP32K instead should minimize power consumption during standby further at the cost of a little timing precision. Using the RTC counter mode 0 will provide a periodic wakeup from standby. The class RealTimeClock of the project codes wraps the necessary setup tasks.
 
-The standby current with the RTC based on OSCULP32K measured 2.1 µA - this is less than half the value from the datasheet with RTC based on OSC32K. 
+The standby current with the RTC based on OSCULP32K measured 2 µA - this is less than half the value from the datasheet with RTC based on OSC32K. 
 
 Activating EIC additionally the same way does not change this value. This allows both timed and interrupt driven wakeup from standby without a significant change in power consumption.
 
 ### SAMD21 Asynchronous Clocks
 
-As the SAMD21 can be configured to use asynchronous clocks with different speeds for the CPU and the peripheral functions, almost every data exchange between the CPU and a peripheral must be synchronized, requiring extra code. This becomes apparent if you look at the method *RealTimeClock::enable()* in the project code, where around 40 % of the operations are sync waits. In such an environment the effectiveness of the code execution significantly depends on how much the clock speeds differ and how often peripheral access is used.
+As the SAMD21 can be configured to use asynchronous clocks with different frequencies for the CPU and the peripheral functions, almost every data exchange between the CPU and a peripheral must be synchronized, requiring extra code. This becomes apparent if you look at the method *RealTimeClock::enable()* in the project code, where around 40 % of the operations are sync waits. In such an environment the effectiveness of the code execution significantly depends on how much the clock speeds differ and how often peripheral access is used.
 
-The Arduino core initializes all bus clock dividers at the end of *SystemInit()* to 1 to improve performance in this regard. This results in an almost classic MCU behaviour, where CPU and important peripherals use the same clock. 
+The Arduino core initializes all bus clock dividers at the end of *SystemInit()* to 1 to improve performance in this regard. This results in an almost classic MCU behaviour, where CPU and important peripherals use the same clock. At the same time this setting has the highest power consumption. 
 
-Additionally the NVM read wait states can be set to zero when throttling the MCU main clock. This is done by the method *System::tune()* in the project code.
+There is no ideal solution for the trade-off between sync waits and power consumption, so the clock divider settings should be adjusted to the project requirements.
+
+When throttling the MCU main clock below 12 MHz the NVM read wait states can be set to zero, further reducing the power consumption. This is done by the method *System::tune()* in the project code.
 
 ### Power On
 
-The standby power consumption of the modified XIAO SAMD21 is comparatively low at 2.1 µA with only RTC and EIC still enabled and running on OSCULP32K. When the MCU is active the power consumption of the board increases by a factor of 1000 to 2.1 mA with:
+The board supply current in bootloader mode with USB connected is 13 mA and 12 mA with USB disconnected and running "blink" at 48 MHz. This is a value that many other users report for an unmodified XIAO SAMD21.
 
-- main clock running at 6 MHz, based on XOSC32k + DFLL48M
-- unnecessary peripheral clocks disabled
-- USB disconnected
+Disconnecting USB and running a *while(1)* reduced the supply current to 8.1 mA, but this is still significantly more than the 3.4 mA listed in the SAMD21 datasheet.
 
-Tests with the same configuration at different clock frequencies show the following relation between clock frequency and supply current:
+To be able to reproduce the datasheet value, the power management settings and the generic clock settings resulting from the SAMD21 bootloader and the Arduino core have to be modified to match the test conditions described in the datasheet chapter 37.7 - "Power Consumption".
 
-$210 µA/MHz + 830 µA$
+It is essential to:
+- disable clocks of unused modules
+- disable unused buses and adjust the bus clock dividers to 4/128/128
+- disable unused clock generators
+- assign unused clocks to a disabled clock generator
 
-While the frequency dependent part is comparatively low, the static part is rather high. This is caused by the main clock configuration based on the combination of XOSC32k and DFLL48M. Unsurprisingly the supply current increases only marginally to 2.2 mA at 8 MHz when using OSC8M instead of XOSC32K and DFLL48M showing the following relation between clock frequency and supply current, that is significantly better for lower frequencies:
+This is done by the method *System::tune()* in the project code. Especially the last aspect is a little curious, because one would expect that disabling a clock would have the same or better effect.
 
-$240 µA/MHz + 220 µA$
+Tests with this configuration at different clock frequencies show the following relation between clock frequency and supply current:
 
-The measured board supply current of 11 mA at the default main clock frequency of 48 MHz of the MCU is significantly more than one expects when looking at the SAMD21 datasheet, which list only 3.4 mA for a *while(1)* loop, which differs only slightly from the *delay()* call used in the project. The difference results from the test conditions, see datasheet chapter 37.7 - "Power Consumption" for details. Due to the code and hardware optimizations of this projects the 11 mA are still ~2 mA less than other users report for the XIAO SAMD21 running "blink".
+$49 µA/MHz + 670 µA$
+
+While the frequency dependent part is comparatively low, the static part is rather high. This is caused by the combination of XOSC32K and DFLL48M for the main clock.
+
+Almost unsurprisingly the supply current could be decreased from 1 mA at 6 MHz to 610 µA at 8 MHz when using OSC8M instead of XOSC32K and DFLL48M, showing the following relation between clock frequency and supply current, that is significantly better at lower frequencies:
+
+$61 µA/MHz + 170 µA$
 
 More configurations and the measured consumptions are listed at the beginning of the project code.
 
 ### Passive Waiting
 
-Some peripheral operations need several clock cycles to complete, e.g. the ADC. Waiting for the result to become available is not effective. If maximum effectiveness is required, consider using an event driven approach. e.g. using interrupts or DMA where applicable. This concept is used in the project code for the RTC timer. The *RTC_Handler()* interrupt service routine will make the LED blink periodically while the MCU is in standby most of the time.
+Peripheral operations often need several clock cycles to complete, e.g. the ADC. Typical solutions use active waiting by testing status values. Power efficiency can be improved by using an event driven approach instead, e.g. using interrupts or the event system of the SAMD21. In the time between the start of the operation and the completed event the MCU can either sleep or perform other operations.
+
+The project code shows how to use timer interrupts as alternative to a delay based solution. The RTC timer interrupt will wakeup the MCU periodically every 2 minutes from standby, turn the LED on and immediately enter IDLE 2 sleep mode, reducing the supply current for the MCU from 0.61 mA at 8 MHz by 50 % to 0.29 mA. After 50 ms the timer counter interrupt will wakeup the MCU again, turn the LED off and put the MCU back into standby with a current consumption of 2 µA. At a 50 % duty cycle the average current would be around 150 µA compared to the 12 mA the MCU requires for a delay based "blink" at 48 MHz, reducing the power consumption of the MCU by a factor of 80.
+
+Turning the LED on and off could be handled by the RTC timer alone if the RTC prescaler is set to support millisecond resolution and the I/O pin controller (PORT) is configured to use a generic clock generator that continues to run in standby. This should reduce the average current to a few µA.
 
 ## Seed Studio XIAO ESP32C3
 
@@ -207,7 +221,7 @@ Low power optimization of an MCU is not possible without a thorough understandin
 
 Best results typically require using MCU register access because frameworks are more focused on ease of use and MCU abstraction.
 
-This projects shows that a slightly modified XIAO SAMD21 board combined with a slightly modified Arduino framework and some extra code can be a good choice for a low power project where the active time is short in comparison to the standby time. The resulting power consumption does not differ significantly from a more individual solution. It will allow running on a battery for a year or more, or indefinitely through energy harvesting whenever enough energy has been collected. At the same time the project can still make use of a lot of Arduino libraries without the need to reinvent the wheel.
+This projects shows that a slightly modified XIAO SAMD21 board combined with a slightly modified Arduino framework and some extra code to support SAMD21 specific power management features can be a good choice for a low power project where the active time is short in comparison to the standby time. With a board supply current of 2 µA in standby and 610 µA at 8 MHz it can be powered by a battery for a year or more, or indefinitely through energy harvesting whenever enough energy has been collected.
 
 ## Licenses and Credits
 
