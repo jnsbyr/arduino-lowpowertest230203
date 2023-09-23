@@ -11,6 +11,24 @@
     ],
     "tasks":[
         {
+            "label": "clean",
+            "type": "shell",
+            "command": "arduino-cli cache clean; [console]::beep(500,300)",
+            "group": "build",
+            "isBackground": false,
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared",
+                "showReuseMessage": true
+            },
+            "icon": {
+                "id": "check"
+            },
+            "problemMatcher": []
+        },
+        {
             "label": "compile",
             "type": "shell",
             "command": "arduino-cli compile -b ${config:arduino_fqbn} ${config:arduino_sketch} ${config:arduino_build_properties}; [console]::beep(500,300)",

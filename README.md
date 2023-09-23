@@ -150,10 +150,6 @@ Repeating this test with the Teensy LC using the Snooze library the standby curr
 
 With a needle it was possible to lift pin 3 of U1 from the PCB with very little force. Now the standby current reads 2 µA, even without changing the mode of all pins to input pullup.
 
-### Arduino Framework Limitations
-
-The project code is specifically tailored for the SAMD21. Most of the code is not using the Arduino framework but the CMSIS-Core interface to access the MCU registers directly. Several methods of the project code are variations of methods of the Arduino core SDK, the Arduino library RTCZero and the ArduinoLowPowerClass. Using the Arduino implementations directly will not provide the same results in regard to power saving because the Arduino framework is designed for ease of use. 
-
 ### RTC and EIC
 
 Using the Arduino library RTCZero would have been convenient, but only the clock/calendar mode is implemented and XOSC32K is used as clock source. Using OSCULP32K instead should minimize power consumption during standby further at the cost of a little timing precision. Using the RTC counter mode 0 will provide a periodic wakeup from standby. The class RealTimeClock of the project codes wraps the necessary setup tasks.
@@ -207,6 +203,25 @@ Peripheral operations often need several clock cycles to complete, e.g. the ADC.
 The project code shows how to use timer interrupts as alternative to a delay based solution. The RTC timer interrupt will wakeup the MCU periodically every 2 minutes from standby, turn the LED on and immediately enter IDLE 2 sleep mode, reducing the supply current for the MCU from 0.61 mA at 8 MHz by 50 % to 0.29 mA. After 50 ms the timer counter interrupt will wakeup the MCU again, turn the LED off and put the MCU back into standby with a current consumption of 2 µA. At a 50 % duty cycle the average current would be around 150 µA compared to the 12 mA the MCU requires for a delay based "blink" at 48 MHz, reducing the power consumption of the MCU by a factor of 80.
 
 Turning the LED on and off could be handled by the RTC timer alone if the RTC prescaler is set to support millisecond resolution and the I/O pin controller (PORT) is configured to use a generic clock generator that continues to run in standby. This should reduce the average current to a few µA.
+
+### Build-In Sensors
+
+The SAMD21 comes with an that allows reading the supply voltage without external wiring. This is very useful for low power applications, especially if the board has a low pin count like the XIAO. Additionally there is a temperature sensor available. As long as the MCU uptime is short, the MCU temperature will be near the ambient temperature, allowing the sensor to be used as a simple thermometer. Arduino core does not provide access to these internal ADC inputs, requiring a reimplementation and extension of the ADC access (see class *Analog2DigitalConverter*). The datasheet does not list power consumption values for the ADC module. When the ADC module is enabled with an ADC clock of 1 MHz the supply current increases by ~30 µA.
+
+### SAMD21 Low Power Extensions
+
+At the end of the day quite a bit of code needed to be recreated to provide low power options for basic things like ADC, RTC, timers and external interrupts. Compared to the extensions included in the Arduino core for the ESP8266 the Arduino core for the SAMD21 is rather sparse. Modifying the Arduino core would have been an option, but the probability that a merge request will get through is rather small, so I decided to create a standalone API with the following C++ classes:
+
+| Class                   | Extensions                                              | 
+| ----------------------- | ------------------------------------------------------- | 
+| System                  | Oscillators, Generic Clocks, Power Manager, Sleep Modes | 
+| Analog2DigitalConverter | Selectable Gain, Hardware Averaging, Internal Sources   | 
+| RealTimeClock           | Counter Mode, Callback                                  | 
+| TimerCounter            | Callback                                                | 
+
+Most of the API code is not using the Arduino framework but the CMSIS-Core interface to access the MCU registers directly. Some methods of the API are variations of methods of the Arduino core SDK, the Arduino library RTCZero and the ArduinoLowPowerClass. Using the Arduino implementations directly will not provide the same results in regard to power saving because the Arduino framework is designed for ease of use.
+
+Originally a part of this project, the low power API is now available as a separate [Arduino library](https://github.com/jnsbyr/arduino-samd21lpe). Please [download](https://github.com/jnsbyr/arduino-samd21lpe/archive/refs/heads/main.zip) the library as ZIP and install it via the Arduino IDE (see [tutorial]( https://docs.arduino.cc/software/ide-v1/tutorials/installing-libraries) for details).
 
 ## Seed Studio XIAO ESP32C3
 

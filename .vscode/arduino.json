@@ -1,7 +1,7 @@
 {
     "sketch": "LowPowerTest230203.ino",
     "output": "build",
-    "configuration": "usbstack=arduino,debug=off,sercom4=exclude,cpu=xiao8",
+    "configuration": "usbstack=arduino,debug=off,sercom4=exclude,cpu=xiao48",
     "board": "Seeeduino:samd:seeed_XIAO_m0",
     "port": "COM12"
 }
